@@ -1,0 +1,19 @@
+version: '3'
+#Mock Docker Compose
+services:
+  app:
+    build: .
+    ports:
+      -"3000:3000"
+    environment:
+      - DATA_URL=postgres://postgres
+    depends_on:
+      - db
+
+  db:
+    image: postgres/postgres
+    ports:
+      -"5342:5342"
+    volumes:
+      -"/www/var/postgres/"
+    
