@@ -6,5 +6,8 @@
     "apps/*",
     "services/*",
     "packages/*"
-  ]
+  ],
+  "dependencies": {
+    "minimatch": "^10.2.4"
+  }
 }

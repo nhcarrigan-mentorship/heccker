@@ -4,12 +4,14 @@ import { Queue } from 'bullmq';
 import Anthropic from '@anthropic-ai/sdk';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { v4 as uuidv4 } from 'uuid';
+import Redis from 'ioredis';
 import { AgentMessage, ActivityEvent } from '@concaretti/shared-types';
 
 @Injectable()
 export class OrchestratorService {
   private readonly logger = new Logger(OrchestratorService.name);
   private anthropic: Anthropic | null = null;
+  private subRedis: Redis;
 
   constructor(
     @InjectQueue('research') private researchQueue: Queue,
@@ -23,6 +25,20 @@ export class OrchestratorService {
     } else {
       this.logger.warn('No ANTHROPIC_API_KEY provided. Using mock classification logic for prototype fallback.');
     }
+
+    // Subscribe to Redis pub sub for inter-agent events
+    this.subRedis = new Redis({ host: 'localhost', port: 6379 });
+    this.subRedis.subscribe('activity_events');
+    this.subRedis.on('message', (channel, message) => {
+      if (channel === 'activity_events') {
+        try {
+          const { sessionId, event } = JSON.parse(message);
+          this.emitEvent(sessionId, event);
+        } catch (e) {
+          this.logger.error('Failed to parse activity event message', e);
+        }
+      }
+    });
   }
 
   private emitEvent(sessionId: string, event: ActivityEvent) {

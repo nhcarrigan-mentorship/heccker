@@ -20,10 +20,16 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
+    "@nestjs/bullmq": "^11.0.4",
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
+    "bullmq": "^5.71.0",
+    "ioredis": "^5.10.1",
+    "minimatch": "^10.2.4",
     "reflect-metadata": "^0.2.2",
+    "replicate": "^1.4.0",
     "rxjs": "^7.8.1"
   },
   "devDependencies": {
