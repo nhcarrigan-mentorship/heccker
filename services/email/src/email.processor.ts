@@ -17,7 +17,10 @@ export class EmailProcessor extends WorkerHost {
     if (process.env.ANTHROPIC_API_KEY) {
       this.anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     }
-    this.redis = new Redis({ host: 'localhost', port: 6379 });
+    this.redis = new Redis({
+      host: process.env.REDIS_HOST || 'localhost',
+      port: parseInt(process.env.REDIS_PORT || '6379', 10),
+    });
   }
 
   private emitEvent(sessionId: string, event: ActivityEvent) {

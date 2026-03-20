@@ -21,7 +21,10 @@ export class ChaosProcessor extends WorkerHost {
     if (process.env.REPLICATE_API_TOKEN) {
       this.replicate = new Replicate({ auth: process.env.REPLICATE_API_TOKEN });
     }
-    this.redis = new Redis({ host: 'localhost', port: 6379 });
+    this.redis = new Redis({
+      host: process.env.REDIS_HOST || 'localhost',
+      port: parseInt(process.env.REDIS_PORT || '6379', 10),
+    });
   }
 
   private emitEvent(sessionId: string, event: ActivityEvent) {

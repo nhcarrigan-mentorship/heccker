@@ -27,7 +27,10 @@ export class OrchestratorService {
     }
 
     // Subscribe to Redis pub sub for inter-agent events
-    this.subRedis = new Redis({ host: 'localhost', port: 6379 });
+    this.subRedis = new Redis({
+      host: process.env.REDIS_HOST || 'localhost',
+      port: parseInt(process.env.REDIS_PORT || '6379', 10),
+    });
     this.subRedis.subscribe('activity_events');
     this.subRedis.on('message', (channel, message) => {
       if (channel === 'activity_events') {
