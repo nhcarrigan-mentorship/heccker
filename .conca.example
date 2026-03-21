@@ -1,0 +1,16 @@
+version: 1
+agent_permissions:
+  orchestrator: enabled
+  research: enabled
+  email: enabled
+  file_code: enabled
+  chaos: enabled
+off_limits:
+  paths:
+    - /private
+    - ~/.ssh
+    - /finance
+rules:
+  confirm_before_send_email: true
+  max_file_size_mb: 50
+  chaos_mode: adventurous
