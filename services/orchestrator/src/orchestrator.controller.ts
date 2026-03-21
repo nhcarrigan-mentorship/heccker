@@ -9,8 +9,7 @@ export class OrchestratorController {
   async orchestrate(@Body() body: { session_id: string, prompt: string, conca_override?: any }) {
     const result = await this.orchestratorService.orchestrateTask(
       body.session_id, 
-      body.prompt, 
-      body.conca_override
+      body.prompt
     );
     
     return {
