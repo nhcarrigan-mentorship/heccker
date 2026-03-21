@@ -62,16 +62,29 @@ Follow the Ubuntu instructions above inside your WSL2 instance.
 docker run -d --name redis -p 6379:6379 redis
 ```
 
+## ── New in V2 ──
+
+- **Sequential Workflow Engine**: Agents now chain execution. Research output feeds Email drafts; GitHub status feeds daily reports.
+- **GitHub Agent**: Monitor commits, PRs, and CI runs automatically.
+- **News Agent**: Real-time RSS/News digestion for AI and Tech topics.
+- **Scheduler Agent**: Cron-based automated triggers via `.conca`.
+- **Redis Persistence**: Every task and agent state is now persisted in Redis.
+- **Unified Pulse**: Centralized agent status broadcasting.
+
 ## ── Microservices ──────────────────────────────────────────────────
 
-- **Gateway** (:3000): Unified API entrance.
-- **Orchestrator** (:3001): Handles session state and agent delegation (SSE stream).
+- **Web Dashboard** (:3000): Next.js 14 Editorial UI.
+- **Orchestrator** (:3001): Handles session state, agent chaining, and SSE streaming.
 - **Research** (:3002): Web search and synthesis agent.
 - **Email** (:3003): Gmail triage and drafting agent.
 - **File-Code** (:3004): Secure file system worker (blocks `.conca` off-limits).
 - **Chaos** (:3005): Creative generation and image synthesis agent.
 - **Config** (:3006): Permission and system policy service.
 - **Auth** (:3007): User validation and identity.
+- **GitHub Agent** (:3008): Repository monitoring and CI status worker.
+- **News Agent** (:3009): RSS and NewsAPI digestion worker.
+- **Scheduler Agent** (:3010): Cron-based task trigger service.
+- **Gatekeeper** (:3011): Unified API entrance.
 
 ## ── The .CONCA Format ────────────────────────────────────────────────
 
