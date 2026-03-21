@@ -6,8 +6,8 @@ Welcome to the Council. This is a NestJS microservices monorepo with an Next.js 
 
 1.  **Node.js**: v18+ recommended.
 2.  **Yarn**: Required for monorepo workspace management.
-3.  **Redis**: Required for the BullMQ orchestrator. Ensure it's running on `localhost:6379`.
-4.  **API Keys**: You need an Anthropic Claude API key for the core intelligence.
+3.  **Redis**: Required for the BullMQ orchestrator. Ensure it's running on `localhost:6379`. See [Redis Configuration](#-redis-configuration-) below.
+4.  **API Keys**: You need a Google Gemini API key for the core intelligence core.
 
 ## ── Quick Start ────────────────────────────────────────────────────
 
@@ -32,6 +32,35 @@ Welcome to the Council. This is a NestJS microservices monorepo with an Next.js 
 
 4.  **Open Dashboard**:
     Navigate to [http://localhost:3000/dashboard](http://localhost:3000/dashboard) to see the editorial UI.
+
+## ── Redis Configuration ──────────────────────────────────────────
+
+### Ubuntu / WSL2
+```bash
+sudo apt update
+sudo apt install redis-server
+sudo systemctl enable redis-server.service
+sudo systemctl start redis-server.service
+# Verify connection
+redis-cli ping # Should return PONG
+```
+
+### macOS (Homebrew)
+```bash
+brew install redis
+brew services start redis
+# Verify connection
+redis-cli ping # Should return PONG
+```
+
+### Windows
+**Option 1: WSL2 (Recommended)**
+Follow the Ubuntu instructions above inside your WSL2 instance.
+
+**Option 2: Docker**
+```bash
+docker run -d --name redis -p 6379:6379 redis
+```
 
 ## ── Microservices ──────────────────────────────────────────────────
 
