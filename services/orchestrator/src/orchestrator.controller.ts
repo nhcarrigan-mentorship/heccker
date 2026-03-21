@@ -1,9 +1,14 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import { Controller, Post, Get, Body } from '@nestjs/common';
 import { OrchestratorService } from './orchestrator.service';
 
 @Controller('agents')
 export class OrchestratorController {
   constructor(private readonly orchestratorService: OrchestratorService) {}
+
+  @Get('history')
+  async getHistory() {
+    return await this.orchestratorService.getSessionHistory();
+  }
 
   @Post('orchestrate')
   async orchestrate(@Body() body: { session_id: string, prompt: string, conca_override?: any }) {

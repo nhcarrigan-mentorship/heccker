@@ -7,11 +7,20 @@ import { v4 as uuidv4 } from 'uuid';
 import Redis from 'ioredis';
 import { AgentMessage, ActivityEvent } from '@concaretti/shared-types';
 
+export interface SessionSummary {
+  id: string;
+  title: string;
+  summary: string;
+  date: string;
+  agents: string[];
+}
+
 @Injectable()
 export class OrchestratorService implements OnModuleInit {
   private readonly logger = new Logger(OrchestratorService.name);
   private gemini: GoogleGenerativeAI | null = null;
   private subRedis: Redis;
+  private redis: Redis;
   private queueEvents: Record<string, QueueEvents> = {};
   private queues: Record<string, Queue> = {};
 
@@ -38,6 +47,11 @@ export class OrchestratorService implements OnModuleInit {
       news: newsQueue,
       scheduler: schedulerQueue
     };
+
+    this.redis = new Redis({
+      host: process.env.REDIS_HOST || 'localhost',
+      port: parseInt(process.env.REDIS_PORT || '6379', 10),
+    });
 
     this.subRedis = new Redis({
       host: process.env.REDIS_HOST || 'localhost',
@@ -168,7 +182,8 @@ export class OrchestratorService implements OnModuleInit {
         status: 'running',
         timestamp: new Date().toISOString()
       };
-      await this.subRedis.hset(`orch:history:${sessionId}`, taskId, JSON.stringify(taskRecord));
+      await this.redis.hset(`orch:history:${sessionId}`, taskId, JSON.stringify(taskRecord));
+      await this.redis.expire(`orch:history:${sessionId}`, 3600); // 1hr TTL
 
       const job = await queue.add('task', message);
 
@@ -182,7 +197,7 @@ export class OrchestratorService implements OnModuleInit {
           status: 'complete', 
           result: result?.synthesis || result?.result 
         };
-        await this.subRedis.hset(`orch:history:${sessionId}`, taskId, JSON.stringify(completedRecord));
+        await this.redis.hset(`orch:history:${sessionId}`, taskId, JSON.stringify(completedRecord));
 
         if (result && (result.synthesis || result.result)) {
            accumulatedContext += `\n[From ${task.agent}]: ${result.synthesis || result.result}`;
@@ -193,10 +208,53 @@ export class OrchestratorService implements OnModuleInit {
       }
     }
 
+    // FINAL STEP: Summarize the session for the Dashboard Cards
+    const sessionMeta = await this.summarizeSession(sessionId, prompt, accumulatedContext, subTasks.map(t => t.agent));
+    await this.redis.hset(`orch:session_meta:${sessionId}`, 'data', JSON.stringify(sessionMeta));
+    await this.redis.expire(`orch:session_meta:${sessionId}`, 86400); // 24hr TTL for summaries
+
     return {
       task_id: uuidv4(),
       status: "complete",
-      context_length: accumulatedContext.length
+      context_length: accumulatedContext.length,
+      summary: sessionMeta
     };
+  }
+
+  private async summarizeSession(sessionId: string, originalPrompt: string, context: string, agents: string[]) {
+    if (!this.gemini) return { title: "New Session", summary: originalPrompt, date: new Date().toLocaleDateString(), agents };
+    
+    try {
+      const model = this.gemini.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const prompt = `Summarize this AI agent session into a catchphrase title and a 1-sentence description.
+      Original Prompt: ${originalPrompt}
+      Agent Findings: ${context}
+      
+      Output JSON: { "title": "...", "summary": "..." }`;
+      
+      const result = await model.generateContent(prompt);
+      const text = result.response.text();
+      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+      
+      return {
+        id: sessionId,
+        title: parsed.title,
+        summary: parsed.summary,
+        date: new Date().toLocaleString(),
+        agents: Array.from(new Set(agents))
+      };
+    } catch (e) {
+      return { id: sessionId, title: "Automated Session", summary: originalPrompt, date: new Date().toLocaleString(), agents };
+    }
+  }
+
+  async getSessionHistory(): Promise<SessionSummary[]> {
+    const keys = await this.redis.keys('orch:session_meta:*');
+    const sessions: SessionSummary[] = [];
+    for (const key of keys) {
+      const data = await this.redis.hget(key, 'data');
+      if (data) sessions.push(JSON.parse(data));
+    }
+    return sessions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }
 }
