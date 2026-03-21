@@ -1,20 +1,25 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { Logger } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import Redis from 'ioredis';
 import { AgentMessage, ActivityEvent } from '@concaretti/shared-types';
+import { tavily } from '@tavily/core';
 
 @Processor('research')
 export class ResearchProcessor extends WorkerHost {
   private readonly logger = new Logger(ResearchProcessor.name);
-  private anthropic: Anthropic | null = null;
+  private gemini: GoogleGenerativeAI | null = null;
+  private tvly: ReturnType<typeof tavily> | null = null;
   private redis: Redis;
 
   constructor() {
     super();
-    if (process.env.ANTHROPIC_API_KEY) {
-      this.anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    if (process.env.GEMINI_API_KEY) {
+      this.gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    }
+    if (process.env.TAVILY_API_KEY) {
+      this.tvly = tavily({ apiKey: process.env.TAVILY_API_KEY });
     }
     this.redis = new Redis({
       host: process.env.REDIS_HOST || 'localhost',
@@ -38,33 +43,57 @@ export class ResearchProcessor extends WorkerHost {
     });
 
     try {
-      // 1. Wikipedia fetch
-      const query = payload.query;
-      const res = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&utf8=&format=json`);
-      const data = await res.json();
-      
-      const searchResults = data.query?.search?.map((s: any) => s.snippet.replace(/<\/?[^>]+(>|$)/g, "")).join('\n') || 'No results found.';
+      // 1. Web search (Tavily or Wikipedia fallback)
+      const query = payload.query || "Concaretti AI system"; // Safety fallback
+      let searchResults = '';
+      let sourceCount = 1;
+
+      if (this.tvly) {
+        this.emitEvent(session_id, {
+          agent_name: 'research',
+          type: 'update',
+          content: `Searching the live web via Tavily for: "${query}"`,
+          timestamp: new Date().toISOString()
+        });
+        const tvlyRes = await this.tvly.search(query, { searchDepth: "basic", maxResults: 5 });
+        searchResults = tvlyRes.results.map((r: any) => `${r.title}: ${r.content}`).join('\n') || 'No results found.';
+        sourceCount = tvlyRes.results.length || 0;
+      } else {
+        this.emitEvent(session_id, {
+          agent_name: 'research',
+          type: 'update',
+          content: `Tavily key missing. Falling back to Wikipedia for: "${query}"`,
+          timestamp: new Date().toISOString()
+        });
+        const res = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&utf8=&format=json`);
+        const data = await res.json();
+        searchResults = data.query?.search?.map((s: any) => s.snippet.replace(/<\/?[^>]+(>|$)/g, "")).join('\n') || 'No results found.';
+        sourceCount = data.query?.search?.length || 0;
+      }
+
+      const GEMINI_MODELS = [
+        "gemini-2.0-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-3.1-flash-lite-preview",
+        "gemini-flash-latest"
+      ];
+      const modelId = GEMINI_MODELS[Math.floor(Math.random() * GEMINI_MODELS.length)];
 
       this.emitEvent(session_id, {
         agent_name: 'research',
         type: 'update',
-        content: `Gathered search results from 1 sources. Synthesizing via Claude...`,
+        content: `Gathered search results from ${sourceCount} sources. Synthesizing via ${modelId}...`,
         timestamp: new Date().toISOString()
       });
 
-      // 2. Claude synthesis
+      // 2. Synthesis
       let synthesis = "";
-      if (this.anthropic) {
-        const claudeRes = await this.anthropic.messages.create({
-          model: 'claude-3-haiku-20240307',
-          max_tokens: 1000,
-          system: "You are the Concaretti Research Agent. Synthesize the provided search results into a concise 2-sentence summary answering the user query. Do not include HTML tags.",
-          messages: [{ role: 'user', content: `Query: ${query}\nResults:\n${searchResults}` }]
-        });
-        const textBlock: any = claudeRes.content.find((c: any) => c.type === 'text');
-        if (textBlock) synthesis = textBlock.text;
+      if (this.gemini) {
+        const model = this.gemini.getGenerativeModel({ model: modelId, systemInstruction: "You are the Concaretti Research Agent. Synthesize the provided search results into a concise 2-sentence summary answering the user query. Do not include HTML tags." });
+        const result = await model.generateContent(`Query: ${query}\nResults:\n${searchResults}`);
+        synthesis = result.response.text();
       } else {
-        synthesis = `Analyzed snippets for "${query}". Found roughly ${data.query?.search?.length || 0} top results. Context acquired.`;
+        synthesis = `Analyzed snippets for "${query}". Found roughly ${sourceCount} top results. Context acquired.`;
       }
 
       // 3. Emit final result
@@ -74,7 +103,7 @@ export class ResearchProcessor extends WorkerHost {
         content: `Research Complete: ${synthesis}`,
         timestamp: new Date().toISOString()
       });
-      
+
       return { success: true, synthesis };
     } catch (e: any) {
       this.logger.error(e);

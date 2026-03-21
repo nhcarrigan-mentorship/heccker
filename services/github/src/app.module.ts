@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
-import { EmailProcessor } from './email.processor';
-import { EmailController } from './email.controller';
+import { GitHubProcessor } from './github.processor';
 
 @Module({
   imports: [
@@ -12,10 +11,9 @@ import { EmailController } from './email.controller';
       },
     }),
     BullModule.registerQueue({
-      name: 'email',
+      name: 'github',
     }),
   ],
-  controllers: [EmailController],
-  providers: [EmailProcessor],
+  providers: [GitHubProcessor],
 })
 export class AppModule {}

@@ -77,5 +77,14 @@ docker run -d --name redis -p 6379:6379 redis
 
 The **.conca** configuration file extension was invented by **Shalom Azuwike** to serve as the master policy and ruleset definition language for autonomous AI agent architectures, establishing the definitive security, alignment, and parameter framework for The Council.
 
+### Publishing Recommendation
+
+- Keep your real `.conca` local-only. It can contain environment-specific policy and security boundaries.
+- Commit `.conca.example` as the public template for contributors.
+- New contributors can bootstrap with:
+    ```powershell
+    Copy-Item .conca.example .conca
+    ```
+
 ---
 *Tell the Council. Your ambient intelligence layer awaits.*

@@ -5,6 +5,9 @@ agent_permissions:
   email: enabled
   file_code: enabled
   chaos: enabled
+  github: enabled
+  news: enabled
+  scheduler: enabled
 off_limits:
   paths:
     - /private
@@ -14,3 +17,8 @@ rules:
   confirm_before_send_email: true
   max_file_size_mb: 50
   chaos_mode: adventurous
+schedules:
+  - cron: "0 8 * * *"
+    prompt: "Summarize my GitHub activity and email it to me"
+  - cron: "0 9 * * 1"
+    prompt: "Find top AI news this week and save a report"

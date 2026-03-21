@@ -1,9 +1,34 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, OnModuleInit, Logger } from '@nestjs/common';
 import * as yaml from 'js-yaml';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Injectable()
-export class ConfigService {
+export class ConfigService implements OnModuleInit {
+  private readonly logger = new Logger(ConfigService.name);
   private currentConfig: any = null;
+  private currentRawYaml: string = '';
+
+  onModuleInit() {
+    this.loadConcaFromFile();
+  }
+
+  loadConcaFromFile() {
+    try {
+      // Config service runs inside services/config/, so the root is ../../
+      const concaPath = path.join(process.cwd(), '../../.conca');
+      if (fs.existsSync(concaPath)) {
+        const fileContent = fs.readFileSync(concaPath, 'utf8');
+        this.currentRawYaml = fileContent;
+        this.saveConfig(fileContent);
+        this.logger.log(`Successfully loaded master configuration from ${concaPath}`);
+      } else {
+        this.logger.warn(`No .conca file found at ${concaPath}. Falling back to hardcoded defaults.`);
+      }
+    } catch (e: any) {
+      this.logger.error(`Failed to load physical .conca file: ${e.message}`);
+    }
+  }
 
   parseConca(yamlString: string): any {
     try {
@@ -42,7 +67,8 @@ export class ConfigService {
   }
 
   getCurrentConfig() {
-    return this.currentConfig || this.getDefaultConfig();
+    const data = this.currentConfig || this.getDefaultConfig();
+    return { ...data, raw_yaml: this.currentRawYaml };
   }
 
   saveConfig(yamlString: string) {
@@ -51,6 +77,16 @@ export class ConfigService {
       throw new BadRequestException({ message: "Invalid .conca file", errors: result.errors });
     }
     this.currentConfig = result.parsed;
+    this.currentRawYaml = yamlString;
+
+    try {
+      const concaPath = path.join(process.cwd(), '../../.conca');
+      fs.writeFileSync(concaPath, yamlString, 'utf8');
+      this.logger.log(`Successfully saved .conca file to disk`);
+    } catch(e: any) {
+       this.logger.error(`Failed to physically write .conca file: ${e.message}`);
+    }
+
     return result;
   }
 
