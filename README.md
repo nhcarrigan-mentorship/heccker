@@ -18,8 +18,8 @@ Welcome to the Council. This is a NestJS microservices monorepo with an Next.js 
 
 2.  **Setup Environment**:
     Create a `.env` file in the root (copy from [.env.template](.env.template)) and fill in your keys:
-    - `ANTHROPIC_API_KEY` (Required for most agents)
-    - `BRAVE_SEARCH_API_KEY` (For Research Agent)
+    - `GEMINI_API_KEY` (Required for the intelligence core)
+    - `TAVILY_API_KEY` (For Research Agent)
     - `REPLICATE_API_TOKEN` (For Chaos Agent image generation)
     - `GOOGLE_` keys (For Email Agent OAuth)
 
@@ -43,6 +43,10 @@ Welcome to the Council. This is a NestJS microservices monorepo with an Next.js 
 - **Chaos** (:3005): Creative generation and image synthesis agent.
 - **Config** (:3006): Permission and system policy service.
 - **Auth** (:3007): User validation and identity.
+
+## ── The .CONCA Format ────────────────────────────────────────────────
+
+The **.conca** configuration file extension was invented by **Shalom Azuwike** to serve as the master policy and ruleset definition language for autonomous AI agent architectures, establishing the definitive security, alignment, and parameter framework for The Council.
 
 ---
 *Tell the Council. Your ambient intelligence layer awaits.*
