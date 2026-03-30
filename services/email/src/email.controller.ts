@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Res, Logger } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Res, Logger } from '@nestjs/common';
 import { google } from 'googleapis';
 import type { Response } from 'express';
 
@@ -19,7 +19,9 @@ export class EmailController {
       const scopes = [
         'https://www.googleapis.com/auth/gmail.send',
         'https://www.googleapis.com/auth/gmail.readonly',
-        'https://www.googleapis.com/auth/gmail.compose'
+        'https://www.googleapis.com/auth/gmail.compose',
+        'https://www.googleapis.com/auth/drive.file',
+        'https://www.googleapis.com/auth/documents'
       ];
 
       const url = oauth2Client.generateAuthUrl({
@@ -81,6 +83,54 @@ export class EmailController {
     } catch (err: any) {
       this.logger.error(`Token exchange failed: ${err.message}`);
       return `<h2>Token Exchange Failed</h2><p>${err.message}</p>`;
+    }
+  }
+
+  @Post('send')
+  async sendEmail(@Body() body: { recipient: string; subject: string; body: string }) {
+    const { recipient, subject, body: content } = body;
+    this.logger.log(`Direct send request to ${recipient}`);
+
+    if (!process.env.GOOGLE_REFRESH_TOKEN) {
+      return { success: false, message: "GOOGLE_REFRESH_TOKEN is missing. Please authenticate first." };
+    }
+
+    try {
+      const oauth2Client = new google.auth.OAuth2(
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET,
+        process.env.GOOGLE_REDIRECT_URI
+      );
+      oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
+
+      const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+      
+      // Create base64 encoded raw email
+      const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
+      const message = [
+        `To: ${recipient}`,
+        `Subject: ${utf8Subject}`,
+        'Content-Type: text/plain; charset=utf-8',
+        'MIME-Version: 1.0',
+        '',
+        content,
+      ].join('\r\n');
+      
+      const raw = Buffer.from(message).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+      await gmail.users.messages.send({
+        userId: 'me',
+        requestBody: { raw },
+      });
+
+      return { success: true, message: "Email dispatched successfully" };
+    } catch (error: any) {
+      this.logger.error(`Gmail API send failed: ${error.message}`);
+      return { 
+        success: false, 
+        message: `Gmail Send Failed: ${error.message}`,
+        details: error.response?.data || error.errors 
+      };
     }
   }
 }

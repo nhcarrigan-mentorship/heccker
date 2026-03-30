@@ -13,9 +13,11 @@ datasource db {
 model Session {
   id        String   @id @default(uuid())
   title     String?
+  summary   String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   tasks     Task[]
+  events    ActivityEvent[]
 }
 
 model Task {
@@ -30,6 +32,16 @@ model Task {
   error     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model ActivityEvent {
+  id         String   @id @default(uuid())
+  sessionId  String
+  session    Session  @relation(fields: [sessionId], references: [id])
+  agentName  String
+  type       String   // "update" | "result" | "error" | "artifact"
+  content    String?
+  timestamp  DateTime @default(now())
 }
 
 model Schedule {

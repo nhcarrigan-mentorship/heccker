@@ -51,6 +51,17 @@ export class ConfigService implements OnModuleInit {
       if (!parsed.version) errors.push("Missing 'version' field");
       if (!parsed.agent_permissions) errors.push("Missing 'agent_permissions' block");
       
+      if (parsed.connectors) {
+        if (!Array.isArray(parsed.connectors)) {
+          errors.push("'connectors' must be an array");
+        } else {
+          parsed.connectors.forEach((conn: any, idx: number) => {
+            if (!conn.name) errors.push(`Connector at index ${idx} is missing 'name'`);
+            if (!conn.mcp) errors.push(`Connector '${conn.name || idx}' is missing 'mcp' URL`);
+          });
+        }
+      }
+
       if (parsed.rules && !parsed.rules.chaos_mode) {
         warnings.push("chaos_mode not set, defaulting to balanced");
       }
@@ -97,10 +108,11 @@ export class ConfigService implements OnModuleInit {
         orchestrator: 'enabled',
         research: 'enabled',
         email: 'enabled',
-        file_code: 'enabled',
+        'file-code': 'enabled',
         chaos: 'enabled'
       },
-      off_limits: { paths: ['/private', '/finance', '~/.ssh'] },
+      connectors: [],
+      off_limits: { paths: ['/private', '/finance', '~/.ssh', 'C:\\Windows'] },
       rules: {
         confirm_before_send_email: true,
         max_file_size_mb: 50,

@@ -11,7 +11,7 @@ import { FileCodeProcessor } from './file-code.processor';
       },
     }),
     BullModule.registerQueue({
-      name: 'file_code',
+      name: 'file-code',
     }),
   ],
   providers: [FileCodeProcessor],

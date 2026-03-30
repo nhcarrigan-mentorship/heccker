@@ -5,12 +5,14 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import Redis from 'ioredis';
 import { google } from 'googleapis';
 import { AgentMessage, ActivityEvent } from './types';
+import { ModelRotator } from './utils/ModelRotator';
 
 @Processor('email')
 export class EmailProcessor extends WorkerHost {
   private readonly logger = new Logger(EmailProcessor.name);
   private gemini: GoogleGenerativeAI | null = null;
   private redis: Redis;
+  private modelRotator = new ModelRotator();
 
   constructor() {
     super();
@@ -27,9 +29,16 @@ export class EmailProcessor extends WorkerHost {
     this.redis.publish('activity_events', JSON.stringify({ sessionId, event }));
   }
 
-  async process(job: Job<AgentMessage>): Promise<any> {
+  async process(job: Job<AgentMessage>, _token?: string): Promise<any> {
+    return this.processWithRetry(job, 0);
+  }
+
+  private async processWithRetry(job: Job<AgentMessage>, retryCount: number): Promise<any> {
     const { session_id, payload } = job.data;
-    this.logger.log(`Processing email task for session ${session_id}`);
+    const modelId = this.modelRotator.getCurrentModel();
+    const maxRetries = this.modelRotator.getAvailableModels().length;
+
+    this.logger.log(`Processing email task for session ${session_id} (Model: ${modelId})`);
 
     this.emitEvent(session_id, {
       agent_name: 'email',
@@ -64,7 +73,7 @@ export class EmailProcessor extends WorkerHost {
 
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
         const rawMessage = this.createRawEmail(recipient, subject, body);
-        
+
         await gmail.users.messages.send({
           userId: 'me',
           requestBody: { raw: rawMessage },
@@ -79,6 +88,53 @@ export class EmailProcessor extends WorkerHost {
 
         return { success: true, status: "sent" };
 
+      } else if (task_type === 'search_emails') {
+        const { query = "" } = payload;
+        this.emitEvent(session_id, {
+          agent_name: 'email',
+          type: 'update',
+          content: `Searching emails for query: "${query}"...`,
+          timestamp: new Date().toISOString()
+        });
+
+        if (!process.env.GOOGLE_REFRESH_TOKEN) {
+          throw new Error("GOOGLE_REFRESH_TOKEN is missing. Cannot search real emails.");
+        }
+
+        const oauth2Client = new google.auth.OAuth2(
+          process.env.GOOGLE_CLIENT_ID,
+          process.env.GOOGLE_CLIENT_SECRET,
+          process.env.GOOGLE_REDIRECT_URI
+        );
+        oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
+
+        const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+        const response = await gmail.users.messages.list({
+          userId: 'me',
+          q: query,
+          maxResults: 5,
+        });
+
+        const messages = response.data.messages || [];
+        const results: any[] = [];
+        for (const msg of messages) {
+          if (!msg.id) continue;
+          const detail = await gmail.users.messages.get({ userId: 'me', id: msg.id as string });
+          results.push({
+            snippet: detail.data.snippet,
+            date: detail.data.internalDate,
+          });
+        }
+
+        this.emitEvent(session_id, {
+          agent_name: 'email',
+          type: 'final',
+          content: `Found ${results.length} emails matching "${query}".`,
+          timestamp: new Date().toISOString()
+        });
+
+        return { success: true, results };
+
       } else {
         // Default to Draft mode
         this.emitEvent(session_id, {
@@ -89,25 +145,22 @@ export class EmailProcessor extends WorkerHost {
         });
 
         let draftContent = "Mock drafted email regarding: " + JSON.stringify(payload);
-        const GEMINI_MODELS = [
-          "gemini-2.0-flash",
-          "gemini-2.5-flash-lite",
-          "gemini-3.1-flash-lite-preview",
-          "gemini-flash-latest"
-        ];
-        const modelId = GEMINI_MODELS[Math.floor(Math.random() * GEMINI_MODELS.length)];
-
         if (this.gemini) {
-          this.emitEvent(session_id, {
-            agent_name: 'email',
-            type: 'update',
-            content: `Drafting reply using ${modelId}...`,
-            timestamp: new Date().toISOString()
-          });
-
-          const model = this.gemini.getGenerativeModel({ model: modelId, systemInstruction: "You are the Concaretti Email Agent. Draft a professional, concise email utilizing the following context." });
-          const result = await model.generateContent(`Context: ${JSON.stringify(payload)}`);
-          draftContent = result.response.text();
+          try {
+            this.logger.log(`Drafting reply via ${modelId}. Context length: ${JSON.stringify(payload).length}`);
+            const model = this.gemini.getGenerativeModel({ 
+              model: modelId, 
+              systemInstruction: "You are the Concaretti Email Agent. Draft a professional, concise email. COMPULSORY: You MUST start the draft with 'To: [Recipient Email]' and 'Subject: [Subject]' on the first two lines, followed by a double newline and then the body. You MUST prioritize and utilize the information found in the '[PREVIOUS_CONTEXT]' or 'context' field of the payload to ensure the email is relevant to the session's research and previous actions." 
+            });
+            const result = await model.generateContent(`Payload data for drafting: ${JSON.stringify(payload)}`);
+            draftContent = result.response.text();
+          } catch (e: any) {
+            if ((e.message?.includes('429') || e.message?.includes('quota')) && retryCount < maxRetries) {
+              this.modelRotator.rotate();
+              return this.processWithRetry(job, retryCount + 1);
+            }
+            throw e;
+          }
         }
 
         this.emitEvent(session_id, {
@@ -138,7 +191,7 @@ export class EmailProcessor extends WorkerHost {
       'Content-Type: text/plain; charset=utf-8',
       '',
       body,
-    ].join('\n');
+    ].join('\r\n');
 
     return Buffer.from(message).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }

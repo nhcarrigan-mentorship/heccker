@@ -4,6 +4,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { OrchestratorController } from './orchestrator.controller';
 import { SessionController } from './session.controller';
 import { OrchestratorService } from './orchestrator.service';
+import { PrismaService } from './prisma.service';
 
 @Module({
   imports: [
@@ -17,14 +18,17 @@ import { OrchestratorService } from './orchestrator.service';
     BullModule.registerQueue(
       { name: 'research' },
       { name: 'email' },
-      { name: 'file_code' },
+      { name: 'file-code' },
       { name: 'chaos' },
       { name: 'github' },
       { name: 'news' },
       { name: 'scheduler' },
+      { name: 'health' },
+      { name: 'coding' },
+      { name: 'deploy' },
     ),
   ],
   controllers: [OrchestratorController, SessionController],
-  providers: [OrchestratorService],
+  providers: [OrchestratorService, PrismaService],
 })
 export class AppModule {}

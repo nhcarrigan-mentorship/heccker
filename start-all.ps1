@@ -38,6 +38,9 @@ $services = @(
     @{ Name = "Auth"; Path = "services\auth"; Command = "yarn.cmd start:dev" },
     @{ Name = "GitHub Agent"; Path = "services\github"; Command = "yarn.cmd start:dev" },
     @{ Name = "News Agent"; Path = "services\news"; Command = "yarn.cmd start:dev" },
+    @{ Name = "Health Agent"; Path = "services\health"; Command = "yarn.cmd start:dev" },
+    @{ Name = "Coding Agent"; Path = "services\coding"; Command = "yarn.cmd start:dev" },
+    @{ Name = "Deploy Agent"; Path = "services\deploy"; Command = "yarn.cmd start:dev" },
     @{ Name = "Scheduler Agent"; Path = "services\scheduler"; Command = "yarn.cmd start:dev" },
     @{ Name = "Web Dashboard"; Path = "apps\web"; Command = "yarn.cmd dev" }
 )

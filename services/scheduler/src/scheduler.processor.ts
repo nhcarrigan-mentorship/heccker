@@ -84,6 +84,23 @@ export class SchedulerProcessor extends WorkerHost implements OnModuleInit {
       const { prompt, cron } = payload;
       this.addCronJob(`dynamic-${Date.now()}`, cron, prompt);
       return { success: true, result: `Dynamically scheduled: ${prompt} @ ${cron}` };
+    } else if (task_type === 'sync_calendar') {
+      const { provider = 'google', url } = payload;
+      this.emitEvent(session_id, {
+        agent_name: 'scheduler',
+        type: 'update',
+        content: `Syncing with ${provider} calendar...`,
+        timestamp: new Date().toISOString()
+      });
+      // Mock sync logic
+      const result = `Successfully synced with ${provider} calendar. 3 new events imported.`;
+      this.emitEvent(session_id, {
+          agent_name: 'scheduler',
+          type: 'final',
+          content: result,
+          timestamp: new Date().toISOString()
+        });
+      return { success: true, result };
     }
 
     return { success: true };

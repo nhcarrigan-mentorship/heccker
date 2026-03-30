@@ -4,12 +4,14 @@ import { Logger } from '@nestjs/common';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import Redis from 'ioredis';
 import { AgentMessage, ActivityEvent } from './types';
+import { ModelRotator } from './utils/ModelRotator';
 
 @Processor('chaos')
 export class ChaosProcessor extends WorkerHost {
   private readonly logger = new Logger(ChaosProcessor.name);
   private gemini: GoogleGenerativeAI | null = null;
   private redis: Redis;
+  private modelRotator = new ModelRotator();
 
   constructor() {
     super();
@@ -26,9 +28,16 @@ export class ChaosProcessor extends WorkerHost {
     this.redis.publish('activity_events', JSON.stringify({ sessionId, event }));
   }
 
-  async process(job: Job<AgentMessage>): Promise<any> {
+  async process(job: Job<AgentMessage>, _token?: string): Promise<any> {
+    return this.processWithRetry(job, 0);
+  }
+
+  private async processWithRetry(job: Job<AgentMessage>, retryCount: number): Promise<any> {
     const { session_id, payload } = job.data;
-    this.logger.log(`Processing chaos task for session ${session_id}`);
+    const modelId = this.modelRotator.getCurrentModel();
+    const maxRetries = this.modelRotator.getAvailableModels().length;
+
+    this.logger.log(`Processing chaos task for session ${session_id} (Model: ${modelId})`);
 
     this.emitEvent(session_id, {
       agent_name: 'chaos',
@@ -41,25 +50,25 @@ export class ChaosProcessor extends WorkerHost {
       const prompt = payload.prompt || "No prompt provided. Initiating spontaneous entropy.";
       let creativeOutput = "A swirling void of unpredictability.";
 
-      const GEMINI_MODELS = [
-        "gemini-2.0-flash",
-        "gemini-2.5-flash-lite",
-        "gemini-3.1-flash-lite-preview",
-        "gemini-flash-latest"
-      ];
-      const modelId = GEMINI_MODELS[Math.floor(Math.random() * GEMINI_MODELS.length)];
-
       if (this.gemini) {
-        this.emitEvent(session_id, {
-          agent_name: 'chaos',
-          type: 'update',
-          content: `Consulting Gemini Cluster (${modelId}) for an unorthodox perspective...`,
-          timestamp: new Date().toISOString()
-        });
+        try {
+          this.emitEvent(session_id, {
+            agent_name: 'chaos',
+            type: 'update',
+            content: `Consulting Gemini Cluster (${modelId}) for an unorthodox perspective...`,
+            timestamp: new Date().toISOString()
+          });
 
-        const model = this.gemini.getGenerativeModel({ model: modelId, systemInstruction: "You are the Concaretti Chaos Agent. You provide wild, highly creative, unorthodox, slightly esoteric, and surprising perspectives. Do not be a helpful assistant. Be a rogue thinker. Keep it under 3 paragraphs." });
-        const result = await model.generateContent({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature: 1.0, maxOutputTokens: 1500 } });
-        creativeOutput = result.response.text();
+          const model = this.gemini.getGenerativeModel({ model: modelId, systemInstruction: "You are the Concaretti Chaos Agent. You provide wild, highly creative, unorthodox, slightly esoteric, and surprising perspectives. Do not be a helpful assistant. Be a rogue thinker. Keep it under 3 paragraphs." });
+          const result = await model.generateContent({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature: 1.0, maxOutputTokens: 1500 } });
+          creativeOutput = result.response.text();
+        } catch (e: any) {
+          if ((e.message?.includes('429') || e.message?.includes('quota')) && retryCount < maxRetries) {
+            this.modelRotator.rotate();
+            return this.processWithRetry(job, retryCount + 1);
+          }
+          throw e;
+        }
       }
 
       // 2. Visual manifestation via Pollinations.ai (Free, no-auth)

@@ -7,6 +7,9 @@
     "services/*",
     "packages/*"
   ],
+  "scripts": {
+    "start:all": "node start-unified.js"
+  },
   "dependencies": {
     "@types/aws-lambda": "^8.10.161",
     "minimatch": "^10.2.4"

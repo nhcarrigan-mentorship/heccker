@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { EmailProcessor } from './email.processor';
 import { EmailController } from './email.controller';
+import { GoogleWorkspaceController } from './google-workspace.controller';
 
 @Module({
   imports: [
@@ -15,7 +16,7 @@ import { EmailController } from './email.controller';
       name: 'email',
     }),
   ],
-  controllers: [EmailController],
+  controllers: [EmailController, GoogleWorkspaceController],
   providers: [EmailProcessor],
 })
 export class AppModule {}

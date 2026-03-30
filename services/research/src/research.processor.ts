@@ -5,6 +5,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import Redis from 'ioredis';
 import { AgentMessage, ActivityEvent } from '@concaretti/shared-types';
 import { tavily } from '@tavily/core';
+import { ModelRotator } from './utils/ModelRotator';
 
 @Processor('research')
 export class ResearchProcessor extends WorkerHost {
@@ -12,6 +13,7 @@ export class ResearchProcessor extends WorkerHost {
   private gemini: GoogleGenerativeAI | null = null;
   private tvly: ReturnType<typeof tavily> | null = null;
   private redis: Redis;
+  private modelRotator = new ModelRotator();
 
   constructor() {
     super();
@@ -31,9 +33,16 @@ export class ResearchProcessor extends WorkerHost {
     this.redis.publish('activity_events', JSON.stringify({ sessionId, event }));
   }
 
-  async process(job: Job<AgentMessage>): Promise<any> {
+  async process(job: Job<AgentMessage>, _token?: string): Promise<any> {
+    return this.processWithRetry(job, 0);
+  }
+
+  private async processWithRetry(job: Job<AgentMessage>, retryCount: number): Promise<any> {
     const { session_id, payload } = job.data;
-    this.logger.log(`Processing research task for session ${session_id}`);
+    const modelId = this.modelRotator.getCurrentModel();
+    const maxRetries = this.modelRotator.getAvailableModels().length;
+
+    this.logger.log(`Processing research task for session ${session_id} (Model: ${modelId})`);
 
     this.emitEvent(session_id, {
       agent_name: 'research',
@@ -43,8 +52,12 @@ export class ResearchProcessor extends WorkerHost {
     });
 
     try {
-      // 1. Web search (Tavily or Wikipedia fallback)
-      const query = payload.query || "Concaretti AI system"; // Safety fallback
+      const task_type = job.data.task_type || 'web_search';
+      const query = payload.query || payload.url;
+      if (!query) {
+        throw new Error("No specific query or URL provided for research task. Aborting to prevent hallucination.");
+      }
+      const isDeep = task_type === 'deep_research';
       let searchResults = '';
       let sourceCount = 1;
 
@@ -52,46 +65,35 @@ export class ResearchProcessor extends WorkerHost {
         this.emitEvent(session_id, {
           agent_name: 'research',
           type: 'update',
-          content: `Searching the live web via Tavily for: "${query}"`,
+          content: `${isDeep ? 'Initiating multi-wave Deep Research' : 'Searching the live web'} via Tavily for: "${query}"`,
           timestamp: new Date().toISOString()
         });
-        const tvlyRes = await this.tvly.search(query, { searchDepth: "basic", maxResults: 5 });
+        const tvlyRes = await this.tvly.search(query, {
+          searchDepth: isDeep ? "advanced" : "basic",
+          maxResults: isDeep ? 10 : 5
+        });
         searchResults = tvlyRes.results.map((r: any) => `${r.title}: ${r.content}`).join('\n') || 'No results found.';
         sourceCount = tvlyRes.results.length || 0;
-      } else {
-        this.emitEvent(session_id, {
-          agent_name: 'research',
-          type: 'update',
-          content: `Tavily key missing. Falling back to Wikipedia for: "${query}"`,
-          timestamp: new Date().toISOString()
-        });
-        const res = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&utf8=&format=json`);
-        const data = await res.json();
-        searchResults = data.query?.search?.map((s: any) => s.snippet.replace(/<\/?[^>]+(>|$)/g, "")).join('\n') || 'No results found.';
-        sourceCount = data.query?.search?.length || 0;
       }
-
-      const GEMINI_MODELS = [
-        "gemini-2.0-flash",
-        "gemini-2.5-flash-lite",
-        "gemini-3.1-flash-lite-preview",
-        "gemini-flash-latest"
-      ];
-      const modelId = GEMINI_MODELS[Math.floor(Math.random() * GEMINI_MODELS.length)];
-
-      this.emitEvent(session_id, {
-        agent_name: 'research',
-        type: 'update',
-        content: `Gathered search results from ${sourceCount} sources. Synthesizing via ${modelId}...`,
-        timestamp: new Date().toISOString()
-      });
 
       // 2. Synthesis
       let synthesis = "";
       if (this.gemini) {
-        const model = this.gemini.getGenerativeModel({ model: modelId, systemInstruction: "You are the Concaretti Research Agent. Synthesize the provided search results into a concise 2-sentence summary answering the user query. Do not include HTML tags." });
-        const result = await model.generateContent(`Query: ${query}\nResults:\n${searchResults}`);
-        synthesis = result.response.text();
+        try {
+          const instruction = isDeep
+            ? "You are the Concaretti Deep Research Agent. Provide a comprehensive, multi-paragraph analysis based on the provided search results."
+            : "You are the Concaretti Research Agent. Synthesize the provided search results into a concise summary.";
+
+          const model = this.gemini.getGenerativeModel({ model: modelId, systemInstruction: instruction });
+          const result = await model.generateContent(`Query: ${query}\nResults:\n${searchResults}`);
+          synthesis = result.response.text();
+        } catch (e: any) {
+          if ((e.message?.includes('429') || e.message?.includes('quota')) && retryCount < maxRetries) {
+            this.modelRotator.rotate();
+            return this.processWithRetry(job, retryCount + 1);
+          }
+          throw e;
+        }
       } else {
         synthesis = `Analyzed snippets for "${query}". Found roughly ${sourceCount} top results. Context acquired.`;
       }
